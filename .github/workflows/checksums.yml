@@ -9,19 +9,21 @@ on:
       - 'install-tools.sh'
       - 'cleanup-system.sh'
 
-permissions:
-  contents: write
-
 jobs:
   update-checksums:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write  # required for git push in the commit step
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
 
       - name: Generate SHA256SUMS
         # Paths are relative to the repo root — matches the layout that remote
         # execution downloads into a tmpdir so sha256sum --check works as-is.
-        run: sha256sum lib/common.sh install-tools.sh cleanup-system.sh setup.sh > SHA256SUMS
+        # setup.sh is excluded: it is already trusted via HTTPS download and is not
+        # downloaded into $tmp_dir during remote execution, so including it would cause
+        # sha256sum --check to always fail with "setup.sh: FAILED open or read".
+        run: sha256sum lib/common.sh install-tools.sh cleanup-system.sh > SHA256SUMS
 
       - name: Check for changes
         id: diff

@@ -6,12 +6,15 @@ set -euo pipefail
 # remote fetch). These are overridden once common.sh is loaded in run_local().
 
 _log_red='\033[0;31m' _log_yellow='\033[1;33m' _log_green='\033[0;32m' _log_nc='\033[0m'
+# Suppress ANSI codes per https://no-color.org — ${NO_COLOR+set} expands to "set"
+# if NO_COLOR is defined (even if empty), so NO_COLOR= still triggers suppression.
 if [[ "${NO_COLOR+set}" == "set" ]] || [[ ! -t 2 ]]; then
     _log_red='' _log_yellow='' _log_green='' _log_nc=''
 fi
 log_info()  { printf "${_log_green}[INFO]${_log_nc} %s\n" "$*" >&2; }
 log_warn()  { printf "${_log_yellow}[WARN]${_log_nc} %s\n" "$*" >&2; }
 log_error() { printf "${_log_red}[ERROR]${_log_nc} %s\n" "$*" >&2; }
+log_step()  { printf "\n${_log_green}[STEP]${_log_nc} ==> %s\n" "$*" >&2; }
 
 # ─── Configuration ───────────────────────────────────────────────────────────
 
@@ -46,6 +49,7 @@ validate_fetched_script() {
 
     if [[ ! -s "$file" ]]; then
         log_error "Fetched $name is empty. The download may have failed."
+        log_error "Check that REPO_URL is reachable: $REPO_URL"
         return 1
     fi
 
@@ -54,6 +58,7 @@ validate_fetched_script() {
     if [[ "$first_line" != "#!/bin/bash" ]]; then
         log_error "Fetched $name does not start with #!/bin/bash (got: '$first_line')."
         log_error "The server may have returned an error page instead of the script."
+        log_error "Check that REPO_URL is reachable: $REPO_URL"
         return 1
     fi
 }
@@ -61,7 +66,7 @@ validate_fetched_script() {
 run_remote() {
     local tmp_dir
     tmp_dir="$(mktemp -d)"
-    trap 'rm -rf "$tmp_dir"' EXIT ERR INT TERM
+    trap 'rm -rf "$tmp_dir"' EXIT ERR INT TERM HUP
 
     log_info "Fetching scripts from $REPO_URL ..."
 
@@ -140,6 +145,7 @@ run_local() {
 
     detect_distro
     require_root
+    check_package_manager
 
     log_step "Starting system setup..."
 
@@ -151,12 +157,12 @@ run_local() {
 }
 
 # ─── Entrypoint ──────────────────────────────────────────────────────────────
-# Three execution modes:
+# Execution modes:
 #   1. Piped from curl (stdin is a pipe) → run_remote fetches scripts into a tmpdir
 #   2. Local clone with lib/common.sh present → run_local uses the repo directly
 #   3. Local without lib/common.sh → run_remote (e.g., only setup.sh was downloaded)
 
-if [[ -p /dev/stdin ]] || [[ ! -t 0 && "${BASH_SOURCE[0]:-}" != "$0" ]]; then
+if [[ -p /dev/stdin ]]; then
     run_remote
 else
     SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" 2>/dev/null && pwd)"

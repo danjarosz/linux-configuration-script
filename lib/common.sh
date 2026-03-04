@@ -10,7 +10,8 @@ BLUE='\033[0;34m'
 BOLD='\033[1m'
 NC='\033[0m' # No Color
 
-# Suppress ANSI codes when NO_COLOR is set or stderr is not a TTY
+# Suppress ANSI codes per https://no-color.org — ${NO_COLOR+set} expands to "set"
+# if NO_COLOR is defined (even if empty), so NO_COLOR= still triggers suppression.
 if [[ "${NO_COLOR+set}" == "set" ]] || [[ ! -t 2 ]]; then
     RED='' YELLOW='' GREEN='' BLUE='' BOLD='' NC=''
 fi
@@ -53,7 +54,9 @@ parse_args() {
 
 run_cmd() {
     if [[ "$DRY_RUN" == "true" ]]; then
-        printf "${YELLOW}[dry-run]${NC} %s\n" "$(printf '%q ' "$@")" >&2
+        local _cmd_str
+        printf -v _cmd_str '%q ' "$@"
+        printf "${YELLOW}[DRY-RUN]${NC} %s\n" "$_cmd_str" >&2
     else
         "$@"
     fi
@@ -73,17 +76,28 @@ detect_distro() {
         exit 1
     fi
 
-    DISTRO_ID="$(grep '^ID=' /etc/os-release | cut -d= -f2- | tr -d '"' || echo "unknown")"
-    DISTRO_ID_LIKE="$(grep '^ID_LIKE=' /etc/os-release | cut -d= -f2- | tr -d '"' || echo "")"
+    # Single-pass read — avoids 6 child processes (two grep|cut|tr chains) and
+    # sanitizes values to strip ANSI escapes or other control characters.
+    local key val
+    while IFS='=' read -r key val; do
+        val="${val#\"}"
+        val="${val%\"}"
+        val="$(printf '%s' "$val" | tr -cd '[:alnum:]_. -')"
+        case "$key" in
+            ID)      DISTRO_ID="$val" ;;
+            ID_LIKE) DISTRO_ID_LIKE="$val" ;;
+        esac
+    done < /etc/os-release
 
     log_info "Detected distro: $DISTRO_ID (ID_LIKE: ${DISTRO_ID_LIKE:-none})"
 
-    # Derive distro family
+    # Derive distro family — check DISTRO_ID directly first (vanilla Debian/Fedora
+    # set ID without ID_LIKE), then fall back to ID_LIKE for derivatives.
     if [[ "$DISTRO_ID" == "arch" || "$DISTRO_ID_LIKE" == *"arch"* ]]; then
         DISTRO_FAMILY="arch"
-    elif [[ "$DISTRO_ID_LIKE" == *"debian"* || "$DISTRO_ID_LIKE" == *"ubuntu"* ]]; then
+    elif [[ "$DISTRO_ID" == "debian" || "$DISTRO_ID" == "ubuntu" || "$DISTRO_ID_LIKE" == *"debian"* || "$DISTRO_ID_LIKE" == *"ubuntu"* ]]; then
         DISTRO_FAMILY="debian"
-    elif [[ "$DISTRO_ID_LIKE" == *"fedora"* ]]; then
+    elif [[ "$DISTRO_ID" == "fedora" || "$DISTRO_ID_LIKE" == *"fedora"* ]]; then
         DISTRO_FAMILY="fedora"
     else
         DISTRO_FAMILY="unknown"
@@ -167,6 +181,12 @@ paru_install() {
         log_error "Cannot run paru as root without SUDO_USER. Please run this script via 'sudo' (not as direct root login)."
         return 1
     fi
+    # Reject invalid usernames — e.g., SUDO_USER=#0 would cause sudo -u to
+    # resolve UID 0 (root), defeating the intended privilege drop for AUR ops.
+    if [[ ! "$SUDO_USER" =~ ^[a-zA-Z0-9_][a-zA-Z0-9_.-]*$ ]]; then
+        log_error "SUDO_USER contains invalid characters: '$SUDO_USER'. Refusing to proceed."
+        return 1
+    fi
     log_info "Installing $# package(s) via paru..."
     # paru must be in SUDO_USER's PATH — sudo -u preserves the user's environment
     run_cmd sudo -u "$SUDO_USER" paru -S --needed --noconfirm "$@"
@@ -199,7 +219,7 @@ pacman_remove() {
         if [[ -v "installed_set[$pkg]" ]]; then
             to_remove+=("$pkg")
         else
-            (( already_absent++ ))
+            already_absent=$(( already_absent + 1 ))
         fi
     done
 
