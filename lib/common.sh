@@ -10,8 +10,13 @@ BLUE='\033[0;34m'
 BOLD='\033[1m'
 NC='\033[0m' # No Color
 
+# Suppress ANSI codes when NO_COLOR is set or stderr is not a TTY
+if [[ "${NO_COLOR+set}" == "set" ]] || [[ ! -t 2 ]]; then
+    RED='' YELLOW='' GREEN='' BLUE='' BOLD='' NC=''
+fi
+
 log_info() {
-    printf "${GREEN}[INFO]${NC} %s\n" "$*"
+    printf "${GREEN}[INFO]${NC} %s\n" "$*" >&2
 }
 
 log_warn() {
@@ -23,7 +28,7 @@ log_error() {
 }
 
 log_step() {
-    printf "\n${BLUE}${BOLD}==> %s${NC}\n" "$*"
+    printf "\n${BLUE}${BOLD}[STEP] ==> %s${NC}\n" "$*" >&2
 }
 
 # ─── Dry-Run Support ─────────────────────────────────────────────────────────
@@ -47,7 +52,7 @@ parse_args() {
 
 run_cmd() {
     if [[ "$DRY_RUN" == "true" ]]; then
-        printf "${YELLOW}[dry-run]${NC} %s\n" "$*"
+        printf "${YELLOW}[dry-run]${NC} %s\n" "$(printf '%q ' "$@")" >&2
     else
         "$@"
     fi
@@ -67,11 +72,8 @@ detect_distro() {
         exit 1
     fi
 
-    # shellcheck source=/dev/null
-    source /etc/os-release
-
-    DISTRO_ID="${ID:-unknown}"
-    DISTRO_ID_LIKE="${ID_LIKE:-}"
+    DISTRO_ID="$(grep -oP '^ID=\K.*' /etc/os-release | tr -d '"' || echo "unknown")"
+    DISTRO_ID_LIKE="$(grep -oP '^ID_LIKE=\K.*' /etc/os-release | tr -d '"' || echo "")"
 
     log_info "Detected distro: $DISTRO_ID (ID_LIKE: ${DISTRO_ID_LIKE:-none})"
 
@@ -146,7 +148,7 @@ pacman_install() {
         return 0
     fi
     log_info "Installing $# package(s) via pacman..."
-    run_cmd sudo pacman -S --needed --noconfirm "$@"
+    run_cmd pacman -S --needed --noconfirm "$@"
 }
 
 paru_install() {
@@ -158,8 +160,12 @@ paru_install() {
         log_warn "Skipping AUR packages (paru not available)."
         return 0
     fi
+    if [[ -z "${SUDO_USER:-}" ]]; then
+        log_error "Cannot run paru as root without SUDO_USER. Please run this script via 'sudo' (not as direct root login)."
+        return 1
+    fi
     log_info "Installing $# package(s) via paru..."
-    run_cmd paru -S --needed --noconfirm "$@"
+    run_cmd sudo -u "$SUDO_USER" paru -S --needed --noconfirm "$@"
 }
 
 pacman_remove() {
@@ -168,11 +174,21 @@ pacman_remove() {
         return 0
     fi
 
+    # In dry-run mode, skip the live package database query
+    if [[ "$DRY_RUN" == "true" ]]; then
+        log_info "Would check and remove $# package(s)..."
+        run_cmd pacman -Rns --noconfirm "$@"
+        return 0
+    fi
+
+    # Bulk query: check which packages are installed in a single call
     local to_remove=()
     local already_absent=0
+    local installed_output
+    installed_output="$(pacman -Q "$@" 2>/dev/null || true)"
 
     for pkg in "$@"; do
-        if pacman -Qi "$pkg" &>/dev/null; then
+        if echo "$installed_output" | grep -q "^${pkg} "; then
             to_remove+=("$pkg")
         else
             already_absent=$((already_absent + 1))
@@ -181,7 +197,7 @@ pacman_remove() {
 
     if [[ ${#to_remove[@]} -gt 0 ]]; then
         log_info "Removing ${#to_remove[@]} package(s)..."
-        run_cmd sudo pacman -Rns --noconfirm "${to_remove[@]}"
+        run_cmd pacman -Rns --noconfirm "${to_remove[@]}"
     fi
 
     if [[ $already_absent -gt 0 ]]; then
@@ -194,6 +210,7 @@ pacman_remove() {
 # ─── Generic Package Dispatchers ────────────────────────────────────────────
 
 pkg_install() {
+    if [[ $# -eq 0 ]]; then return 0; fi
     case "$DISTRO_FAMILY" in
         arch)
             pacman_install "$@"
@@ -206,6 +223,7 @@ pkg_install() {
 }
 
 pkg_remove() {
+    if [[ $# -eq 0 ]]; then return 0; fi
     case "$DISTRO_FAMILY" in
         arch)
             pacman_remove "$@"

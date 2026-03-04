@@ -6,8 +6,8 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 if [[ ! -f "$SCRIPT_DIR/lib/common.sh" ]]; then
-    echo "Error: lib/common.sh not found in $SCRIPT_DIR" >&2
-    echo "Please run this script from the repository root." >&2
+    echo "[ERROR] lib/common.sh not found in $SCRIPT_DIR" >&2
+    echo "[ERROR] Please run this script from the repository root." >&2
     exit 1
 fi
 
@@ -59,11 +59,12 @@ esac
 
 log_step "Installing packages..."
 
-pkg_install "${INSTALL_PACKAGES[@]}"
+pkg_install ${INSTALL_PACKAGES[@]+"${INSTALL_PACKAGES[@]}"}
 
 if [[ "$DISTRO_FAMILY" == "arch" ]]; then
-    paru_install "${AUR_PACKAGES[@]}"
+    paru_install ${AUR_PACKAGES[@]+"${AUR_PACKAGES[@]}"}
 fi
 
+local_total=$(( ${#INSTALL_PACKAGES[@]} + ${#AUR_PACKAGES[@]} ))
 log_step "Installation complete."
-log_info "$(( ${#INSTALL_PACKAGES[@]} + ${#AUR_PACKAGES[@]} )) package(s) processed."
+log_info "$local_total package(s) processed."

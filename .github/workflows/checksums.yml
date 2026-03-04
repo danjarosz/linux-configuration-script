@@ -1,0 +1,35 @@
+name: Update SHA256SUMS
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'lib/common.sh'
+      - 'install-tools.sh'
+      - 'cleanup-system.sh'
+
+permissions:
+  contents: write
+
+jobs:
+  update-checksums:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Generate SHA256SUMS
+        run: sha256sum lib/common.sh install-tools.sh cleanup-system.sh > SHA256SUMS
+
+      - name: Check for changes
+        id: diff
+        run: |
+          git diff --quiet SHA256SUMS && echo "changed=false" >> "$GITHUB_OUTPUT" || echo "changed=true" >> "$GITHUB_OUTPUT"
+
+      - name: Commit updated SHA256SUMS
+        if: steps.diff.outputs.changed == 'true'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add SHA256SUMS
+          git commit -m "chore: update SHA256SUMS [skip ci]"
+          git push

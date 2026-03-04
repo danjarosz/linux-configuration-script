@@ -45,7 +45,13 @@ Run directly from the remote repository — the script fetches everything it nee
 curl -fsSL https://raw.githubusercontent.com/daankh/linux-configuration-script/main/setup.sh | sudo bash
 ```
 
-You can override the source URL with the `REPO_URL` environment variable:
+When fetching scripts remotely, `setup.sh` automatically:
+
+1. Downloads all scripts in parallel for faster startup
+2. Validates each fetched file is non-empty and starts with `#!/bin/bash`
+3. Verifies SHA256 checksums if a `SHA256SUMS` file is available (warns and continues if unavailable)
+
+> **Note:** `REPO_URL` is `readonly` after initial assignment. It defaults to this repository's GitHub raw URL and can only be overridden via environment variable before the script starts:
 
 ```bash
 curl -fsSL https://example.com/setup.sh | sudo REPO_URL=https://example.com bash
@@ -104,6 +110,18 @@ INSTALL_PACKAGES=(
 
 > Review the package lists before executing. Always run with `--dry-run` first to preview what will happen.
 
+### NO_COLOR Support
+
+All log output respects the [NO_COLOR](https://no-color.org/) convention. ANSI color codes are suppressed when:
+
+- The `NO_COLOR` environment variable is set (any value), or
+- stderr is not a TTY (e.g., output is piped or redirected)
+
+```bash
+NO_COLOR=1 sudo ./setup.sh              # No colors
+sudo ./setup.sh 2>&1 | tee setup.log    # No colors (piped)
+```
+
 ## Project Structure
 
 ```
@@ -112,5 +130,9 @@ INSTALL_PACKAGES=(
 ├── lib/
 │   └── common.sh         # Shared: distro detection, privilege checks, dry-run, logging
 ├── install-tools.sh      # Package installation (placeholder — packages added in follow-up)
-└── cleanup-system.sh     # Package removal (unwanted distro packages)
+├── cleanup-system.sh     # Package removal (unwanted distro packages)
+├── SHA256SUMS            # Checksums for integrity verification during remote execution
+└── .github/
+    └── workflows/
+        └── checksums.yml # Auto-regenerates SHA256SUMS on push to main
 ```

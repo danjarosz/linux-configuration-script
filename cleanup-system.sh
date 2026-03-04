@@ -6,8 +6,8 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 if [[ ! -f "$SCRIPT_DIR/lib/common.sh" ]]; then
-    echo "Error: lib/common.sh not found in $SCRIPT_DIR" >&2
-    echo "Please run this script from the repository root." >&2
+    echo "[ERROR] lib/common.sh not found in $SCRIPT_DIR" >&2
+    echo "[ERROR] Please run this script from the repository root." >&2
     exit 1
 fi
 
@@ -55,6 +55,6 @@ esac
 
 log_step "Cleaning up unwanted packages..."
 
-pkg_remove "${REMOVE_PACKAGES[@]}"
+pkg_remove ${REMOVE_PACKAGES[@]+"${REMOVE_PACKAGES[@]}"}
 
 log_step "System cleanup complete."
