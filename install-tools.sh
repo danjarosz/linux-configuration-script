@@ -19,10 +19,12 @@ source "$SCRIPT_DIR/lib/common.sh"
 parse_args "$@"
 
 # ─── Initialization ──────────────────────────────────────────────────────────
+# NOTE: This boilerplate is intentionally duplicated so sub-scripts can run standalone.
+# When invoked from setup.sh, the guards skip already-completed detection.
 
-detect_distro
+[[ -n "${DISTRO_FAMILY:-}" ]] || detect_distro
 require_root
-check_package_manager
+[[ -n "${PKG_MANAGER:-}" ]] || check_package_manager
 check_aur_helper
 
 # ─── Package Lists ───────────────────────────────────────────────────────────
@@ -40,11 +42,13 @@ case "$DISTRO_FAMILY" in
         )
         ;;
     debian)
+        log_warn "Debian package list is not yet implemented. No packages will be installed."
         INSTALL_PACKAGES=(
             # Packages will be added in a follow-up task
         )
         ;;
     fedora)
+        log_warn "Fedora package list is not yet implemented. No packages will be installed."
         INSTALL_PACKAGES=(
             # Packages will be added in a follow-up task
         )
@@ -65,6 +69,6 @@ if [[ "$DISTRO_FAMILY" == "arch" ]]; then
     paru_install ${AUR_PACKAGES[@]+"${AUR_PACKAGES[@]}"}
 fi
 
-local_total=$(( ${#INSTALL_PACKAGES[@]} + ${#AUR_PACKAGES[@]} ))
+total_packages=$(( ${#INSTALL_PACKAGES[@]} + ${#AUR_PACKAGES[@]} ))
 log_step "Installation complete."
-log_info "$local_total package(s) processed."
+log_info "$total_packages package(s) processed."

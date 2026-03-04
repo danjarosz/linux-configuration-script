@@ -19,10 +19,12 @@ source "$SCRIPT_DIR/lib/common.sh"
 parse_args "$@"
 
 # ─── Initialization ──────────────────────────────────────────────────────────
+# NOTE: This boilerplate is intentionally duplicated so sub-scripts can run standalone.
+# When invoked from setup.sh, the guards skip already-completed detection.
 
-detect_distro
+[[ -n "${DISTRO_FAMILY:-}" ]] || detect_distro
 require_root
-check_package_manager
+[[ -n "${PKG_MANAGER:-}" ]] || check_package_manager
 
 # ─── Packages to Remove ─────────────────────────────────────────────────────
 
@@ -36,11 +38,13 @@ case "$DISTRO_FAMILY" in
         )
         ;;
     debian)
+        log_warn "Debian removal list is not yet implemented. No packages will be removed."
         REMOVE_PACKAGES=(
             # Packages will be added in a follow-up task
         )
         ;;
     fedora)
+        log_warn "Fedora removal list is not yet implemented. No packages will be removed."
         REMOVE_PACKAGES=(
             # Packages will be added in a follow-up task
         )

@@ -51,7 +51,7 @@ When fetching scripts remotely, `setup.sh` automatically:
 2. Validates each fetched file is non-empty and starts with `#!/bin/bash`
 3. Verifies SHA256 checksums if a `SHA256SUMS` file is available (warns and continues if unavailable)
 
-> **Note:** `REPO_URL` is `readonly` after initial assignment. It defaults to this repository's GitHub raw URL and can only be overridden via environment variable before the script starts:
+> **Security note:** `REPO_URL` controls where all scripts are fetched from during remote execution. Overriding it redirects downloads to an arbitrary server — only set it if you trust the source (e.g., your own fork or mirror). After assignment, `REPO_URL` is marked `readonly` to prevent runtime re-assignment. SHA256 checksums are verified when a `SHA256SUMS` file is available, but since the checksums are fetched from the same origin as the scripts, this protects against transport corruption (e.g., truncated downloads), not a compromised origin.
 
 ```bash
 curl -fsSL https://example.com/setup.sh | sudo REPO_URL=https://example.com bash
@@ -131,7 +131,7 @@ sudo ./setup.sh 2>&1 | tee setup.log    # No colors (piped)
 │   └── common.sh         # Shared: distro detection, privilege checks, dry-run, logging
 ├── install-tools.sh      # Package installation (placeholder — packages added in follow-up)
 ├── cleanup-system.sh     # Package removal (unwanted distro packages)
-├── SHA256SUMS            # Checksums for integrity verification during remote execution
+├── SHA256SUMS            # Checksums for all scripts (including setup.sh) — verified during remote execution
 └── .github/
     └── workflows/
         └── checksums.yml # Auto-regenerates SHA256SUMS on push to main

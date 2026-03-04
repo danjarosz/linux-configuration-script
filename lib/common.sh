@@ -44,6 +44,7 @@ parse_args() {
                 ;;
             *)
                 log_error "Unknown argument: $arg"
+                log_error "Usage: <script> [--dry-run]"
                 exit 1
                 ;;
         esac
@@ -72,8 +73,8 @@ detect_distro() {
         exit 1
     fi
 
-    DISTRO_ID="$(grep -oP '^ID=\K.*' /etc/os-release | tr -d '"' || echo "unknown")"
-    DISTRO_ID_LIKE="$(grep -oP '^ID_LIKE=\K.*' /etc/os-release | tr -d '"' || echo "")"
+    DISTRO_ID="$(grep '^ID=' /etc/os-release | cut -d= -f2- | tr -d '"' || echo "unknown")"
+    DISTRO_ID_LIKE="$(grep '^ID_LIKE=' /etc/os-release | cut -d= -f2- | tr -d '"' || echo "")"
 
     log_info "Detected distro: $DISTRO_ID (ID_LIKE: ${DISTRO_ID_LIKE:-none})"
 
@@ -160,11 +161,14 @@ paru_install() {
         log_warn "Skipping AUR packages (paru not available)."
         return 0
     fi
+    # Trust boundary: SUDO_USER is set by sudo(8) and cannot be forged by
+    # unprivileged callers, but is empty when running as direct root login.
     if [[ -z "${SUDO_USER:-}" ]]; then
         log_error "Cannot run paru as root without SUDO_USER. Please run this script via 'sudo' (not as direct root login)."
         return 1
     fi
     log_info "Installing $# package(s) via paru..."
+    # paru must be in SUDO_USER's PATH — sudo -u preserves the user's environment
     run_cmd sudo -u "$SUDO_USER" paru -S --needed --noconfirm "$@"
 }
 
@@ -181,17 +185,21 @@ pacman_remove() {
         return 0
     fi
 
-    # Bulk query: check which packages are installed in a single call
+    # Parse installed packages into an associative array for O(1) lookups
+    local -A installed_set=()
     local to_remove=()
     local already_absent=0
-    local installed_output
-    installed_output="$(pacman -Q "$@" 2>/dev/null || true)"
+    local line pkg_name
+    while IFS= read -r line; do
+        pkg_name="${line%% *}"
+        installed_set["$pkg_name"]=1
+    done < <(pacman -Q "$@" 2>/dev/null || true)
 
     for pkg in "$@"; do
-        if echo "$installed_output" | grep -q "^${pkg} "; then
+        if [[ -v "installed_set[$pkg]" ]]; then
             to_remove+=("$pkg")
         else
-            already_absent=$((already_absent + 1))
+            (( already_absent++ ))
         fi
     done
 

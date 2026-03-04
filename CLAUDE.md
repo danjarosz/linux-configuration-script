@@ -37,7 +37,10 @@ The script requires elevated privileges for package operations.
 - **Safe array expansion:** use `${arr[@]+"${arr[@]}"}` idiom for arrays that may be empty (prevents `set -u` crash in Bash < 4.4)
 - **Logging to stderr:** all `log_*` functions write to stderr so stdout stays clean for piping
 - **NO_COLOR support:** ANSI color vars are cleared when `NO_COLOR` is set or stderr is not a TTY (per [no-color.org](https://no-color.org/))
-- **Safe os-release parsing:** use `grep`-based field extraction from `/etc/os-release` — never `source` it (RCE risk)
+- **Safe os-release parsing:** use POSIX-compatible `grep '^FIELD=' | cut -d= -f2- | tr -d '"'` to extract fields from `/etc/os-release` — never `source` it (RCE risk) and avoid `grep -oP` (requires PCRE, not universally available)
 - **`printf '%q'` in run_cmd:** preserves argument boundaries in dry-run output
 - **`REPO_URL` is readonly:** prevents runtime override after assignment (security hardening for `curl | bash`)
 - **Privilege management:** `pacman` runs as root (the script already has root); `paru` drops to `$SUDO_USER` since AUR helpers refuse root
+- **Associative array for package lookups:** in `pacman_remove()`, parse `pacman -Q` output into a `local -A` associative array for O(1) installed-package checks instead of per-package subshell grep
+- **Inline log stubs in setup.sh:** lightweight `log_info`/`log_warn`/`log_error` functions defined before `common.sh` is sourced so remote-fetch output uses consistent `[INFO]`/`[WARN]`/`[ERROR]` prefixes; overridden when `common.sh` loads
+- **Idempotent init guards:** sub-scripts use `[[ -n "${VAR:-}" ]] || init_func` guards so detection runs once when orchestrated by `setup.sh` but still works standalone

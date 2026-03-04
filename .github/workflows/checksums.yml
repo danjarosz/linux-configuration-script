@@ -4,6 +4,7 @@ on:
   push:
     branches: [main]
     paths:
+      - 'setup.sh'
       - 'lib/common.sh'
       - 'install-tools.sh'
       - 'cleanup-system.sh'
@@ -15,10 +16,12 @@ jobs:
   update-checksums:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
 
       - name: Generate SHA256SUMS
-        run: sha256sum lib/common.sh install-tools.sh cleanup-system.sh > SHA256SUMS
+        # Paths are relative to the repo root — matches the layout that remote
+        # execution downloads into a tmpdir so sha256sum --check works as-is.
+        run: sha256sum lib/common.sh install-tools.sh cleanup-system.sh setup.sh > SHA256SUMS
 
       - name: Check for changes
         id: diff
