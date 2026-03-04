@@ -69,6 +69,13 @@ if [[ "$DISTRO_FAMILY" == "arch" ]]; then
     paru_install ${AUR_PACKAGES[@]+"${AUR_PACKAGES[@]}"}
 fi
 
-total_packages=$(( ${#INSTALL_PACKAGES[@]} + ${#AUR_PACKAGES[@]} ))
+local_count=${#INSTALL_PACKAGES[@]}
+aur_count=${#AUR_PACKAGES[@]}
+total_packages=$(( local_count + aur_count ))
+
 log_step "Installation complete."
-log_info "$total_packages package(s) processed."
+if [[ $total_packages -gt 0 ]]; then
+    log_info "$total_packages package(s) requested for installation."
+else
+    log_info "No packages to process (package lists are empty)."
+fi

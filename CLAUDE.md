@@ -37,7 +37,7 @@ The script requires elevated privileges for package operations.
 - **Safe array expansion:** use `${arr[@]+"${arr[@]}"}` idiom for arrays that may be empty (prevents `set -u` crash in Bash < 4.4)
 - **Logging to stderr:** all `log_*` functions write to stderr so stdout stays clean for piping
 - **NO_COLOR support:** ANSI color vars are cleared when `NO_COLOR` is set or stderr is not a TTY (per [no-color.org](https://no-color.org/))
-- **Safe os-release parsing:** read `/etc/os-release` in a single `while IFS='=' read -r` loop — never `source` it (RCE risk); sanitize values with `tr -cd '[:alnum:]_. -'` to strip ANSI escapes and control characters (hyphen last to avoid range interpretation)
+- **Safe os-release parsing:** read `/etc/os-release` in a single `while IFS='=' read -r` loop — never `source` it (RCE risk); keys are uppercased with `${key^^}` first (normalizes non-standard lowercase keys), then sanitized with `${key//[^A-Z0-9_]/}` (restricted to `[A-Z0-9_]` per the systemd os-release spec); values with `${val//[^[:alnum:]_. -]/}` using bash builtins (zero forks; hyphen last to avoid range interpretation)
 - **`printf -v` in run_cmd:** use `printf -v _cmd_str '%q ' "$@"` (no subshell fork) to preserve argument boundaries in dry-run output
 - **`REPO_URL` is readonly:** prevents runtime override after assignment (security hardening for `curl | bash`)
 - **Privilege management:** `pacman` runs as root (the script already has root); `paru` drops to `$SUDO_USER` since AUR helpers refuse root; `SUDO_USER` is validated against `^[a-zA-Z0-9_][a-zA-Z0-9_.-]*$` to reject `#`-prefixed values that `sudo -u` would interpret as UIDs

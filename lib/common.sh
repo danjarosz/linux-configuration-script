@@ -34,6 +34,10 @@ log_step() {
 
 # ─── Dry-Run Support ─────────────────────────────────────────────────────────
 
+# DRY_RUN is intentionally inheritable from the environment so that setup.sh
+# can propagate dry-run mode to child sub-scripts via the process environment,
+# in addition to passing --dry-run on the command line. parse_args() overrides
+# this value when --dry-run is passed as an argument.
 DRY_RUN="${DRY_RUN:-false}"
 
 parse_args() {
@@ -46,6 +50,8 @@ parse_args() {
             *)
                 log_error "Unknown argument: $arg"
                 log_error "Usage: <script> [--dry-run]"
+                log_error "Options:"
+                log_error "  --dry-run    Preview all commands without making any changes"
                 exit 1
                 ;;
         esac
@@ -77,12 +83,17 @@ detect_distro() {
     fi
 
     # Single-pass read — avoids 6 child processes (two grep|cut|tr chains) and
-    # sanitizes values to strip ANSI escapes or other control characters.
+    # sanitizes both keys and values to strip ANSI escapes or other control characters.
+    # Keys are restricted to [A-Z0-9_] per the systemd os-release spec.
+    # Values keep alphanumerics, underscore, dot, space, and hyphen (hyphen last to
+    # avoid range interpretation in the character class).
     local key val
     while IFS='=' read -r key val; do
+        key="${key^^}"
+        key="${key//[^A-Z0-9_]/}"
         val="${val#\"}"
         val="${val%\"}"
-        val="$(printf '%s' "$val" | tr -cd '[:alnum:]_. -')"
+        val="${val//[^[:alnum:]_. -]/}"
         case "$key" in
             ID)      DISTRO_ID="$val" ;;
             ID_LIKE) DISTRO_ID_LIKE="$val" ;;
@@ -238,7 +249,10 @@ pacman_remove() {
 # ─── Generic Package Dispatchers ────────────────────────────────────────────
 
 pkg_install() {
-    if [[ $# -eq 0 ]]; then return 0; fi
+    if [[ $# -eq 0 ]]; then
+        log_info "No packages to install."
+        return 0
+    fi
     case "$DISTRO_FAMILY" in
         arch)
             pacman_install "$@"
@@ -251,7 +265,10 @@ pkg_install() {
 }
 
 pkg_remove() {
-    if [[ $# -eq 0 ]]; then return 0; fi
+    if [[ $# -eq 0 ]]; then
+        log_info "No packages to remove."
+        return 0
+    fi
     case "$DISTRO_FAMILY" in
         arch)
             pacman_remove "$@"

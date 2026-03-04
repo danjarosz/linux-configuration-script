@@ -3,17 +3,24 @@ name: Update SHA256SUMS
 on:
   push:
     branches: [main]
+    # Only the files included in SHA256SUMS — setup.sh is excluded because it
+    # is not downloaded into $tmp_dir during remote execution (see Generate step).
     paths:
-      - 'setup.sh'
       - 'lib/common.sh'
       - 'install-tools.sh'
       - 'cleanup-system.sh'
+
+defaults:
+  run:
+    shell: bash
 
 jobs:
   update-checksums:
     runs-on: ubuntu-latest
     permissions:
-      contents: write  # required for git push in the commit step
+      # contents:write is required for the "git push" in the commit step;
+      # without it the GITHUB_TOKEN cannot push the updated SHA256SUMS file.
+      contents: write
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
 

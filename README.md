@@ -51,7 +51,8 @@ When fetching scripts remotely, `setup.sh` automatically:
 2. Validates each fetched file is non-empty and starts with `#!/bin/bash`
 3. Verifies SHA256 checksums if a `SHA256SUMS` file is available (warns and continues if unavailable)
 
-> **Security note:** `REPO_URL` controls where all scripts are fetched from during remote execution. Overriding it redirects downloads to an arbitrary server — only set it if you trust the source (e.g., your own fork or mirror). After assignment, `REPO_URL` is marked `readonly` to prevent runtime re-assignment. SHA256 checksums are verified when a `SHA256SUMS` file is available, but since the checksums are fetched from the same origin as the scripts, this protects against transport corruption (e.g., truncated downloads), not a compromised origin.
+> [!WARNING]
+> `REPO_URL` controls where all scripts are fetched from during remote execution. Overriding it redirects downloads to an arbitrary server — only set it if you trust the source (e.g., your own fork or mirror). After assignment, `REPO_URL` is marked `readonly` to prevent runtime re-assignment. SHA256 checksums are verified when a `SHA256SUMS` file is available, but since the checksums are fetched from the same origin as the scripts, this protects against transport corruption (e.g., truncated downloads), not a compromised origin.
 
 ```bash
 curl -fsSL https://example.com/setup.sh | sudo REPO_URL=https://example.com bash
