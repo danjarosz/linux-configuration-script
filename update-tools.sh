@@ -180,13 +180,22 @@ run_local() {
             log_info "All packages are up to date."
             ;;
         debian)
-            log_warn "Debian update is not yet implemented. No packages will be updated."
+            log_warn "Debian update is not yet populated. No packages will be updated."
             ;;
         fedora)
-            log_warn "Fedora update is not yet implemented. No packages will be updated."
+            log_warn "Fedora update is not yet populated. No packages will be updated."
+            ;;
+        nixos)
+            log_warn "NixOS update is not yet populated. No packages will be updated."
+            ;;
+        fedora-atomic)
+            log_warn "Fedora Atomic update is not yet populated. No packages will be updated."
+            ;;
+        vanilla)
+            log_warn "VanillaOS update is not yet populated. No packages will be updated."
             ;;
         *)
-            log_error "No update implementation for distro family '$DISTRO_FAMILY'."
+            log_error "No update logic for distro family '$DISTRO_FAMILY'."
             log_error "Please open an issue if you need support for this distribution."
             exit 1
             ;;

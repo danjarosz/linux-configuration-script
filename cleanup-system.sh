@@ -93,6 +93,8 @@ run_remote() {
     # Download only the files this script needs
     curl -fsSL "$REPO_URL/lib/common.sh" -o "$tmp_dir/lib/common.sh" &
     dl_pids+=($!) dl_names+=("lib/common.sh")
+    curl -fsSL "$REPO_URL/lib/packages.sh" -o "$tmp_dir/lib/packages.sh" &
+    dl_pids+=($!) dl_names+=("lib/packages.sh")
 
     # Also attempt to fetch SHA256SUMS (optional — graceful degradation)
     curl -fsSL "$REPO_URL/SHA256SUMS" -o "$tmp_dir/SHA256SUMS" &
@@ -120,7 +122,8 @@ run_remote() {
         exit 1
     fi
 
-    validate_fetched_script "$tmp_dir/lib/common.sh" "lib/common.sh" || exit 1
+    validate_fetched_script "$tmp_dir/lib/common.sh"   "lib/common.sh"   || exit 1
+    validate_fetched_script "$tmp_dir/lib/packages.sh" "lib/packages.sh" || exit 1
 
     # Verify integrity via SHA256SUMS if available (--ignore-missing: only check files
     # present in the tmpdir — individual scripts don't download the full suite).
@@ -163,6 +166,8 @@ run_local() {
 
     # shellcheck source=lib/common.sh
     source "$base_dir/lib/common.sh"
+    # shellcheck source=lib/packages.sh
+    source "$base_dir/lib/packages.sh"
 
     parse_args ${FORWARD_ARGS[@]+"${FORWARD_ARGS[@]}"}
 
@@ -176,27 +181,33 @@ run_local() {
     [[ -n "${_AUR_HELPER_CHECKED:-}" ]] || check_aur_helper
 
     # ─── Packages to Remove ─────────────────────────────────────────────────
+    # Loaded from lib/packages.sh — dispatch to the correct distro family arrays.
 
     REMOVE_PACKAGES=()
 
     case "$DISTRO_FAMILY" in
         arch)
-            REMOVE_PACKAGES=(
-                htop            # Replaced by btop
-                vim             # Replaced by neovim
-            )
+            REMOVE_PACKAGES=("${REMOVE_PACKAGES_ARCH[@]+"${REMOVE_PACKAGES_ARCH[@]}"}")
             ;;
         debian)
-            log_warn "Debian removal list is not yet implemented. No packages will be removed."
-            REMOVE_PACKAGES=(
-                # Packages will be added in a follow-up task
-            )
+            REMOVE_PACKAGES=("${REMOVE_PACKAGES_DEBIAN[@]+"${REMOVE_PACKAGES_DEBIAN[@]}"}")
+            [[ ${#REMOVE_PACKAGES[@]} -gt 0 ]] || log_warn "Debian removal list is not yet populated. No packages will be removed."
             ;;
         fedora)
-            log_warn "Fedora removal list is not yet implemented. No packages will be removed."
-            REMOVE_PACKAGES=(
-                # Packages will be added in a follow-up task
-            )
+            REMOVE_PACKAGES=("${REMOVE_PACKAGES_FEDORA[@]+"${REMOVE_PACKAGES_FEDORA[@]}"}")
+            [[ ${#REMOVE_PACKAGES[@]} -gt 0 ]] || log_warn "Fedora removal list is not yet populated. No packages will be removed."
+            ;;
+        nixos)
+            REMOVE_PACKAGES=("${REMOVE_PACKAGES_NIXOS[@]+"${REMOVE_PACKAGES_NIXOS[@]}"}")
+            [[ ${#REMOVE_PACKAGES[@]} -gt 0 ]] || log_warn "NixOS removal list is not yet populated. No packages will be removed."
+            ;;
+        fedora-atomic)
+            REMOVE_PACKAGES=("${REMOVE_PACKAGES_FEDORA_ATOMIC[@]+"${REMOVE_PACKAGES_FEDORA_ATOMIC[@]}"}")
+            [[ ${#REMOVE_PACKAGES[@]} -gt 0 ]] || log_warn "Fedora Atomic removal list is not yet populated. No packages will be removed."
+            ;;
+        vanilla)
+            REMOVE_PACKAGES=("${REMOVE_PACKAGES_VANILLA[@]+"${REMOVE_PACKAGES_VANILLA[@]}"}")
+            [[ ${#REMOVE_PACKAGES[@]} -gt 0 ]] || log_warn "VanillaOS removal list is not yet populated. No packages will be removed."
             ;;
         *)
             log_error "No cleanup list defined for distro family '$DISTRO_FAMILY'."
@@ -223,7 +234,7 @@ if [[ -p /dev/stdin ]]; then
     run_remote
 else
     SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" 2>/dev/null && pwd)"
-    if [[ -f "$SCRIPT_DIR/lib/common.sh" ]]; then
+    if [[ -f "$SCRIPT_DIR/lib/common.sh" ]] && [[ -f "$SCRIPT_DIR/lib/packages.sh" ]]; then
         run_local "$SCRIPT_DIR"
     else
         run_remote

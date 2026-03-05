@@ -72,6 +72,7 @@ run_cmd() {
 
 DISTRO_ID=""
 DISTRO_ID_LIKE=""
+DISTRO_VARIANT_ID=""
 DISTRO_FAMILY=""
 
 detect_distro() {
@@ -95,21 +96,41 @@ detect_distro() {
         val="${val%\"}"
         val="${val//[^[:alnum:]_. -]/}"
         case "$key" in
-            ID)      DISTRO_ID="$val" ;;
-            ID_LIKE) DISTRO_ID_LIKE="$val" ;;
+            ID)         DISTRO_ID="$val" ;;
+            ID_LIKE)    DISTRO_ID_LIKE="$val" ;;
+            # VARIANT_ID gets a second, tighter pass: dots and spaces are valid for
+            # ID/ID_LIKE (e.g., "Debian GNU/Linux") but not for variant identifiers
+            # like "silverblue" or "kinoite" that are used as exact-match tokens.
+            VARIANT_ID) DISTRO_VARIANT_ID="${val//[^[:alnum:]_-]/}" ;;
         esac
     done < /etc/os-release
 
-    log_info "Detected distro: $DISTRO_ID (ID_LIKE: ${DISTRO_ID_LIKE:-none})"
+    log_info "Detected distro: $DISTRO_ID (ID_LIKE: ${DISTRO_ID_LIKE:-none}, VARIANT_ID: ${DISTRO_VARIANT_ID:-none})"
 
-    # Derive distro family — check DISTRO_ID directly first (vanilla Debian/Fedora
-    # set ID without ID_LIKE), then fall back to ID_LIKE for derivatives.
-    if [[ "$DISTRO_ID" == "arch" || "$DISTRO_ID_LIKE" == *"arch"* ]]; then
+    # Derive distro family — order matters: check specific/immutable distros before
+    # their parent families so derivatives are not misclassified.
+    if [[ "$DISTRO_ID" == "nixos" ]]; then
+        DISTRO_FAMILY="nixos"
+    elif [[ "$DISTRO_ID" == "vanilla" ]]; then
+        # VanillaOS is immutable (Debian Sid-based) — must not fall through to debian
+        DISTRO_FAMILY="vanilla"
+    elif [[ "$DISTRO_ID" == "fedora" && "$DISTRO_VARIANT_ID" =~ ^(silverblue|kinoite|sericea|onyx)$ ]]; then
+        # Fedora Atomic desktops use rpm-ostree, not dnf — separate from regular Fedora.
+        # Known variants only — new spins require adding to this list. As a fallback,
+        # check_package_manager() will detect rpm-ostree even if VARIANT_ID is unrecognized.
+        DISTRO_FAMILY="fedora-atomic"
+    elif [[ "$DISTRO_ID" == "arch" || "$DISTRO_ID_LIKE" == *"arch"* ]]; then
         DISTRO_FAMILY="arch"
     elif [[ "$DISTRO_ID" == "debian" || "$DISTRO_ID" == "ubuntu" || "$DISTRO_ID_LIKE" == *"debian"* || "$DISTRO_ID_LIKE" == *"ubuntu"* ]]; then
         DISTRO_FAMILY="debian"
     elif [[ "$DISTRO_ID" == "fedora" || "$DISTRO_ID_LIKE" == *"fedora"* ]]; then
-        DISTRO_FAMILY="fedora"
+        # Fallback: detect Fedora Atomic spins with unknown VARIANT_ID by checking
+        # for rpm-ostree — works on live systems but not in CI-like environments.
+        if command -v rpm-ostree &>/dev/null; then
+            DISTRO_FAMILY="fedora-atomic"
+        else
+            DISTRO_FAMILY="fedora"
+        fi
     else
         DISTRO_FAMILY="unknown"
         log_warn "Unknown distro family for '$DISTRO_ID'. Some features may not work."
@@ -140,14 +161,22 @@ PARU_AVAILABLE=false
 _AUR_HELPER_CHECKED=""
 
 check_package_manager() {
+    # rpm-ostree must be probed before dnf — Fedora Atomic ships both, and dnf
+    # would shadow rpm-ostree, causing the wrong package manager to be selected.
     if command -v pacman &>/dev/null; then
         PKG_MANAGER="pacman"
     elif command -v apt &>/dev/null; then
         PKG_MANAGER="apt"
+    elif command -v rpm-ostree &>/dev/null; then
+        PKG_MANAGER="rpm-ostree"
     elif command -v dnf &>/dev/null; then
         PKG_MANAGER="dnf"
+    elif command -v nix &>/dev/null; then
+        PKG_MANAGER="nix"
+    elif command -v apx &>/dev/null; then
+        PKG_MANAGER="apx"
     else
-        log_error "No supported package manager found (pacman, apt, dnf)."
+        log_error "No supported package manager found (pacman, apt, rpm-ostree, dnf, nix, apx)."
         exit 1
     fi
     log_info "Package manager: $PKG_MANAGER"
@@ -283,8 +312,12 @@ pkg_install() {
         arch)
             pacman_install "$@"
             ;;
+        debian|fedora|nixos|fedora-atomic|vanilla)
+            log_warn "pkg_install is not yet populated for distro family '$DISTRO_FAMILY'. Skipping."
+            return 0
+            ;;
         *)
-            log_error "pkg_install is not implemented for distro family '$DISTRO_FAMILY'."
+            log_error "pkg_install is not supported for distro family '$DISTRO_FAMILY'."
             exit 1
             ;;
     esac
@@ -299,8 +332,12 @@ pkg_remove() {
         arch)
             pacman_remove "$@"
             ;;
+        debian|fedora|nixos|fedora-atomic|vanilla)
+            log_warn "pkg_remove is not yet populated for distro family '$DISTRO_FAMILY'. Skipping."
+            return 0
+            ;;
         *)
-            log_error "pkg_remove is not implemented for distro family '$DISTRO_FAMILY'."
+            log_error "pkg_remove is not supported for distro family '$DISTRO_FAMILY'."
             exit 1
             ;;
     esac
@@ -347,10 +384,12 @@ pkg_update() {
             pacman_update || return 1
             paru_update   || return 1
             ;;
-        # Debian/Fedora stubs are handled in each script's run_local() with early warnings,
-        # so this branch only fires for truly unknown families (e.g., "unknown" from detect_distro).
+        debian|fedora|nixos|fedora-atomic|vanilla)
+            log_warn "pkg_update is not yet populated for distro family '$DISTRO_FAMILY'. Skipping."
+            return 0
+            ;;
         *)
-            log_error "pkg_update is not implemented for distro family '$DISTRO_FAMILY'."
+            log_error "pkg_update is not supported for distro family '$DISTRO_FAMILY'."
             exit 1
             ;;
     esac
