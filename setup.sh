@@ -81,14 +81,30 @@ validate_fetched_script() {
 run_remote() {
     local tmp_dir
     tmp_dir="$(mktemp -d)"
-    trap 'rm -rf "$tmp_dir"' EXIT ERR INT TERM HUP
+
+    local dl_pids=() dl_names=()
+    local pid_sums=""
+
+    # NOTE: Bash promotes nested function definitions to global scope —
+    # _cleanup_setup_tmpdir is visible after run_remote() returns. This is intentional:
+    # the trap must reference a callable name. The function body references dl_pids,
+    # pid_sums, and tmp_dir by name — they are locals of run_remote() and remain
+    # accessible as long as run_remote() is on the call stack (which covers all trap
+    # scenarios: EXIT fires before run_remote returns, ERR/INT/TERM fire while active).
+    _cleanup_setup_tmpdir() {
+        # Kill any still-running curl background jobs before removing the tmpdir
+        kill ${dl_pids[@]+"${dl_pids[@]}"} ${pid_sums:+"$pid_sums"} 2>/dev/null || true
+        # Reap only the known curl jobs — avoids blocking on unrelated background children
+        wait ${dl_pids[@]+"${dl_pids[@]}"} ${pid_sums:+"$pid_sums"} 2>/dev/null || true
+        rm -rf "$tmp_dir"
+    }
+    trap '_cleanup_setup_tmpdir' EXIT ERR INT TERM HUP QUIT
 
     log_info "Fetching scripts from $REPO_URL ..."
 
     mkdir -p "$tmp_dir/lib"
 
     # Parallelize downloads — track PIDs and names for targeted error reporting
-    local dl_pids=() dl_names=()
 
     curl -fsSL "$REPO_URL/lib/common.sh" -o "$tmp_dir/lib/common.sh" &
     dl_pids+=($!) dl_names+=("lib/common.sh")
@@ -96,10 +112,15 @@ run_remote() {
     dl_pids+=($!) dl_names+=("install-tools.sh")
     curl -fsSL "$REPO_URL/cleanup-system.sh" -o "$tmp_dir/cleanup-system.sh" &
     dl_pids+=($!) dl_names+=("cleanup-system.sh")
+    # update-tools.sh is downloaded but NOT executed by setup.sh — it exists here so that
+    # sha256sum --check --strict (without --ignore-missing) can verify ALL files listed in
+    # SHA256SUMS, ensuring no checksums are silently skipped.
+    curl -fsSL "$REPO_URL/update-tools.sh" -o "$tmp_dir/update-tools.sh" &
+    dl_pids+=($!) dl_names+=("update-tools.sh")
 
     # Also attempt to fetch SHA256SUMS (optional — graceful degradation)
     curl -fsSL "$REPO_URL/SHA256SUMS" -o "$tmp_dir/SHA256SUMS" &
-    local pid_sums=$!
+    pid_sums=$!
 
     local download_failed=false
     local i
@@ -126,6 +147,7 @@ run_remote() {
     validate_fetched_script "$tmp_dir/lib/common.sh"      "lib/common.sh"      || exit 1
     validate_fetched_script "$tmp_dir/install-tools.sh"   "install-tools.sh"   || exit 1
     validate_fetched_script "$tmp_dir/cleanup-system.sh"  "cleanup-system.sh"  || exit 1
+    validate_fetched_script "$tmp_dir/update-tools.sh"    "update-tools.sh"    || exit 1
 
     # Verify integrity via SHA256SUMS if available
     # NOTE: Same-origin checksums protect against transport corruption (e.g., truncated
@@ -133,29 +155,36 @@ run_remote() {
     # SHA256SUMS is fetched from the same source as the scripts themselves.
     if [[ "$sums_ok" == "true" ]]; then
         log_info "Verifying script integrity..."
-        local verify_output
-        if ! verify_output=$(cd "$tmp_dir" && sha256sum --check --strict SHA256SUMS 2>&1); then
+        local verify_out_file="$tmp_dir/sha256sum.out"
+        pushd "$tmp_dir" >/dev/null
+        if ! sha256sum --check --strict SHA256SUMS >"$verify_out_file" 2>&1; then
+            popd >/dev/null
             log_error "SHA256 checksum verification failed. Scripts may have been tampered with."
             log_error "sha256sum output:"
             # Sanitize server-influenced output: strip non-printable bytes (ANSI escapes,
             # terminal control codes) and \r (passes [[:print:]] in most locales but
             # causes terminal-overwrite when printed). Cap each line at 200 chars, 20 lines max.
-            local _line
-            local _count=0
-            while IFS= read -r _line && (( _count < 20 )); do
-                _line="${_line//[^[:print:]]/}"
-                _line="${_line//$'\r'/}"
-                printf '%s\n' "${_line:0:200}" >&2
-                (( ++_count )) || true
-            done <<< "$verify_output"
+            if [[ -s "$verify_out_file" ]]; then
+                local _line _count=0
+                while IFS= read -r _line && (( _count < 20 )); do
+                    _line="${_line//[^[:print:]]/}"
+                    _line="${_line//$'\r'/}"
+                    printf '%s\n' "${_line:0:200}" >&2
+                    (( ++_count )) || true
+                done < "$verify_out_file"
+            fi
             exit 1
         fi
+        popd >/dev/null
         log_info "Integrity verification passed."
     else
         log_warn "SHA256SUMS not available — cannot verify integrity of downloaded scripts."
         log_warn "Continuing will execute unverified root-level code from: $REPO_URL"
     fi
 
+    # update-tools.sh is verified above (SHA256) but intentionally not chmod'd nor
+    # called by setup.sh — it is a standalone operation. If you add a call to it
+    # here, add it to the chmod line too.
     chmod +x "$tmp_dir/install-tools.sh" "$tmp_dir/cleanup-system.sh"
 
     run_local "$tmp_dir"

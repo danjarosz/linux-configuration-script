@@ -9,6 +9,7 @@ on:
       - 'lib/common.sh'
       - 'install-tools.sh'
       - 'cleanup-system.sh'
+      - 'update-tools.sh'
 
 defaults:
   run:
@@ -30,7 +31,7 @@ jobs:
         # setup.sh is excluded: it is already trusted via HTTPS download and is not
         # downloaded into $tmp_dir during remote execution, so including it would cause
         # sha256sum --check to always fail with "setup.sh: FAILED open or read".
-        run: sha256sum lib/common.sh install-tools.sh cleanup-system.sh > SHA256SUMS
+        run: sha256sum lib/common.sh install-tools.sh cleanup-system.sh update-tools.sh > SHA256SUMS
 
       - name: Check for changes
         id: diff
