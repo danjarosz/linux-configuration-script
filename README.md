@@ -8,6 +8,7 @@ Currently supports **Arch-based** distros, with a structure ready for Debian-bas
 
 - **Install** development tools, utilities, and applications required for daily work
 - **Remove** bloatware and unused packages from the default installation
+- **Update** all installed packages to their latest versions
 - **Automate** the setup so a fresh system is ready to use with a single script run
 
 ## Supported Distro Families
@@ -35,11 +36,11 @@ cd linux-configuration-script
 sudo ./setup.sh
 ```
 
-This runs `cleanup-system.sh` first (to remove unwanted packages), then `install-tools.sh`.
+This runs `cleanup-system.sh` first (to remove unwanted packages), then `install-tools.sh`. `update-tools.sh` is **not** run automatically — it is a standalone operation.
 
 ### Remote Execution (without cloning)
 
-Run directly from the remote repository — the script fetches everything it needs into a temporary directory:
+Run the full setup directly from the remote repository — the script fetches everything it needs into a temporary directory:
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/daankh/linux-configuration-script/main/setup.sh | sudo bash
@@ -58,6 +59,23 @@ When fetching scripts remotely, `setup.sh` automatically:
 curl -fsSL https://example.com/setup.sh | sudo REPO_URL=https://example.com bash
 ```
 
+### Remote Execution of Individual Scripts
+
+Each script can also be run standalone from the remote repository — it fetches only `lib/common.sh` (not the full suite):
+
+```bash
+# Install packages only
+curl -fsSL https://raw.githubusercontent.com/daankh/linux-configuration-script/main/install-tools.sh | sudo bash
+
+# Remove unwanted packages only
+curl -fsSL https://raw.githubusercontent.com/daankh/linux-configuration-script/main/cleanup-system.sh | sudo bash
+
+# Update all installed packages
+curl -fsSL https://raw.githubusercontent.com/daankh/linux-configuration-script/main/update-tools.sh | sudo bash
+```
+
+Individual scripts use `--ignore-missing` for SHA256SUMS verification, so only the files actually downloaded are checked.
+
 ### Dry Run
 
 Preview every command that would be executed, without making any changes to the system:
@@ -75,13 +93,15 @@ Each script can be run independently:
 ```bash
 sudo ./install-tools.sh        # Install packages only
 sudo ./cleanup-system.sh       # Remove unwanted packages only
+sudo ./update-tools.sh         # Update all installed packages
 ```
 
-Both support the `--dry-run` flag:
+All support the `--dry-run` flag:
 
 ```bash
 ./install-tools.sh --dry-run
 ./cleanup-system.sh --dry-run
+./update-tools.sh --dry-run
 ```
 
 ### What Each Script Does
@@ -91,6 +111,7 @@ Both support the `--dry-run` flag:
 | `setup.sh` | Entrypoint — detects the distro, checks privileges, then runs cleanup + install in order |
 | `install-tools.sh` | Installs development tools and utilities from the distro's package manager (and AUR on Arch) |
 | `cleanup-system.sh` | Removes unwanted packages that ship with the default installation |
+| `update-tools.sh` | Updates all installed packages to their latest versions (`pacman -Syu` + `paru -Sua` on Arch) |
 
 ### Customizing Package Lists
 
@@ -127,11 +148,12 @@ sudo ./setup.sh 2>&1 | tee setup.log    # No colors (piped)
 
 ```
 .
-├── setup.sh              # Entrypoint — orchestrates install + cleanup
+├── setup.sh              # Entrypoint — orchestrates cleanup + install
 ├── lib/
 │   └── common.sh         # Shared: distro detection, privilege checks, dry-run, logging
 ├── install-tools.sh      # Package installation (placeholder — packages added in follow-up)
 ├── cleanup-system.sh     # Package removal (unwanted distro packages)
+├── update-tools.sh       # Package updates (pacman -Syu + paru -Sua on Arch)
 ├── SHA256SUMS            # Checksums for downloaded scripts — verified during remote execution
 └── .github/
     └── workflows/

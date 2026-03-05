@@ -137,6 +137,7 @@ require_root() {
 
 PKG_MANAGER=""
 PARU_AVAILABLE=false
+_AUR_HELPER_CHECKED=""
 
 check_package_manager() {
     if command -v pacman &>/dev/null; then
@@ -154,6 +155,7 @@ check_package_manager() {
 
 check_aur_helper() {
     if [[ "$PKG_MANAGER" != "pacman" ]]; then
+        _AUR_HELPER_CHECKED=true
         return 0
     fi
 
@@ -164,6 +166,41 @@ check_aur_helper() {
         PARU_AVAILABLE=false
         log_warn "'paru' (AUR helper) is not installed. AUR packages will be skipped."
     fi
+    _AUR_HELPER_CHECKED=true
+}
+
+# ─── SUDO_USER Validation ────────────────────────────────────────────────────
+
+[[ -v _SUDO_USER_RE ]] || readonly _SUDO_USER_RE='^[a-zA-Z0-9_][a-zA-Z0-9_.-]*$'
+[[ -v _SUDO_USER_VALIDATED ]] || _SUDO_USER_VALIDATED=""
+
+_validate_sudo_user() {
+    # Return immediately if already validated in this session — SUDO_USER is
+    # immutable during execution (set by sudo(8)), so the result never changes.
+    [[ -n "${_SUDO_USER_VALIDATED:-}" ]] && return 0
+
+    # Trust boundary: SUDO_USER is set by sudo(8) and cannot be forged by
+    # unprivileged callers, but is empty when running as direct root login.
+    if [[ -z "${SUDO_USER:-}" ]]; then
+        log_error "Cannot run paru as root without SUDO_USER (direct root login detected)."
+        log_error "Please run this script via sudo."
+        return 1
+    fi
+    # Reject invalid usernames — e.g., SUDO_USER=#0 would cause sudo -u to
+    # resolve UID 0 (root), defeating the intended privilege drop for AUR ops.
+    # NOTE: $_SUDO_USER_RE must be unquoted — in [[ =~ ]], quoting the RHS
+    # forces literal string comparison instead of regex matching.
+    if [[ ! "$SUDO_USER" =~ $_SUDO_USER_RE ]]; then
+        # Strip non-printable chars before logging — SUDO_USER could contain ANSI
+        # escape sequences that manipulate terminal output.
+        local _safe_user="${SUDO_USER//[^[:print:]]/}"
+        _safe_user="${_safe_user//$'\r'/}"
+        _safe_user="${_safe_user//$'\t'/}"
+        log_error "SUDO_USER contains invalid characters: '${_safe_user:0:64}'. Refusing to proceed."
+        return 1
+    fi
+    readonly _SUDO_USER_VALIDATED=true
+    return 0
 }
 
 # ─── Package Operation Helpers ────────────────────────────────────────────────
@@ -186,18 +223,7 @@ paru_install() {
         log_warn "Skipping AUR packages (paru not available)."
         return 0
     fi
-    # Trust boundary: SUDO_USER is set by sudo(8) and cannot be forged by
-    # unprivileged callers, but is empty when running as direct root login.
-    if [[ -z "${SUDO_USER:-}" ]]; then
-        log_error "Cannot run paru as root without SUDO_USER. Please run this script via 'sudo' (not as direct root login)."
-        return 1
-    fi
-    # Reject invalid usernames — e.g., SUDO_USER=#0 would cause sudo -u to
-    # resolve UID 0 (root), defeating the intended privilege drop for AUR ops.
-    if [[ ! "$SUDO_USER" =~ ^[a-zA-Z0-9_][a-zA-Z0-9_.-]*$ ]]; then
-        log_error "SUDO_USER contains invalid characters: '$SUDO_USER'. Refusing to proceed."
-        return 1
-    fi
+    _validate_sudo_user || return 1
     log_info "Installing $# package(s) via paru..."
     # paru must be in SUDO_USER's PATH — sudo -u preserves the user's environment
     run_cmd sudo -u "$SUDO_USER" paru -S --needed --noconfirm "$@"
@@ -275,6 +301,56 @@ pkg_remove() {
             ;;
         *)
             log_error "pkg_remove is not implemented for distro family '$DISTRO_FAMILY'."
+            exit 1
+            ;;
+    esac
+}
+
+# ─── Package Update Helpers ─────────────────────────────────────────────────
+
+pacman_update() {
+    if [[ "$DRY_RUN" == "true" ]]; then
+        log_info "Would update all official packages via pacman..."
+    else
+        log_info "Updating all official packages via pacman..."
+    fi
+    if ! run_cmd pacman -Syu --noconfirm; then
+        log_error "pacman -Syu failed. Try running 'pacman -Syu' manually to see the full error output."
+        return 1
+    fi
+}
+
+paru_update() {
+    if [[ "$PARU_AVAILABLE" != "true" ]]; then
+        log_warn "Skipping AUR update (paru not available)."
+        return 0
+    fi
+    _validate_sudo_user || return 1
+    if [[ "$DRY_RUN" == "true" ]]; then
+        log_info "Would update AUR packages via paru..."
+        run_cmd sudo -u "$SUDO_USER" paru -Sua --noconfirm
+        return 0
+    fi
+    log_info "Updating AUR packages via paru..."
+    # -Sua updates only AUR packages — official repos already synced by pacman_update()
+    if ! run_cmd sudo -u "$SUDO_USER" paru -Sua --noconfirm; then
+        # SUDO_USER is safe to log here — _validate_sudo_user confirmed it matches [a-zA-Z0-9_.-]
+        log_error "paru -Sua failed. Try running 'paru -Sua' as $SUDO_USER to see the full error output."
+        return 1
+    fi
+}
+
+pkg_update() {
+    case "$DISTRO_FAMILY" in
+        arch)
+            # pacman -Syu must complete first: AUR builds link against updated official libs.
+            pacman_update || return 1
+            paru_update   || return 1
+            ;;
+        # Debian/Fedora stubs are handled in each script's run_local() with early warnings,
+        # so this branch only fires for truly unknown families (e.g., "unknown" from detect_distro).
+        *)
+            log_error "pkg_update is not implemented for distro family '$DISTRO_FAMILY'."
             exit 1
             ;;
     esac

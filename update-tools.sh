@@ -31,7 +31,7 @@ for arg in "$@"; do
             ;;
         *)
             log_error "Unknown argument: $arg"
-            log_error "Usage: ./install-tools.sh [--dry-run]"
+            log_error "Usage: ./update-tools.sh [--dry-run]"
             exit 1
             ;;
     esac
@@ -72,19 +72,19 @@ run_remote() {
     local pid_sums=""
 
     # NOTE: Bash promotes nested function definitions to global scope —
-    # _cleanup_install_tmpdir is visible after run_remote() returns. This is intentional:
+    # _cleanup_update_tmpdir is visible after run_remote() returns. This is intentional:
     # the trap must reference a callable name. The function body references dl_pids,
     # pid_sums, and tmp_dir by name — they are locals of run_remote() and remain
     # accessible as long as run_remote() is on the call stack (which covers all trap
     # scenarios: EXIT fires before run_remote returns, ERR/INT/TERM fire while active).
-    _cleanup_install_tmpdir() {
+    _cleanup_update_tmpdir() {
         # Kill any still-running curl background jobs before removing the tmpdir
         kill ${dl_pids[@]+"${dl_pids[@]}"} ${pid_sums:+"$pid_sums"} 2>/dev/null || true
         # Reap only the known curl jobs — avoids blocking on unrelated background children
         wait ${dl_pids[@]+"${dl_pids[@]}"} ${pid_sums:+"$pid_sums"} 2>/dev/null || true
         rm -rf "$tmp_dir"
     }
-    trap '_cleanup_install_tmpdir' EXIT ERR INT TERM HUP QUIT
+    trap '_cleanup_update_tmpdir' EXIT ERR INT TERM HUP QUIT
 
     log_info "Fetching scripts from $REPO_URL ..."
 
@@ -166,58 +166,31 @@ run_local() {
 
     parse_args ${FORWARD_ARGS[@]+"${FORWARD_ARGS[@]}"}
 
-    # ─── Initialization ──────────────────────────────────────────────────────
-    # NOTE: This boilerplate is intentionally duplicated so sub-scripts can run standalone.
-    # When invoked from setup.sh, the guards skip already-completed detection.
-
     [[ -n "${DISTRO_FAMILY:-}" ]] || detect_distro
     require_root
     [[ -n "${PKG_MANAGER:-}" ]] || check_package_manager
     [[ -n "${_AUR_HELPER_CHECKED:-}" ]] || check_aur_helper
 
-    # ─── Package Lists ───────────────────────────────────────────────────────
-
-    INSTALL_PACKAGES=()
-    AUR_PACKAGES=()
+    log_step "Updating packages..."
 
     case "$DISTRO_FAMILY" in
         arch)
-            INSTALL_PACKAGES=(
-                # Packages will be added in a follow-up task
-            )
-            AUR_PACKAGES=(
-                # AUR packages will be added in a follow-up task
-            )
+            pkg_update
+            log_step "Update complete."
+            log_info "All packages are up to date."
             ;;
         debian)
-            log_warn "Debian package list is not yet implemented. No packages will be installed."
-            INSTALL_PACKAGES=(
-                # Packages will be added in a follow-up task
-            )
+            log_warn "Debian update is not yet implemented. No packages will be updated."
             ;;
         fedora)
-            log_warn "Fedora package list is not yet implemented. No packages will be installed."
-            INSTALL_PACKAGES=(
-                # Packages will be added in a follow-up task
-            )
+            log_warn "Fedora update is not yet implemented. No packages will be updated."
             ;;
         *)
-            log_error "No package list defined for distro family '$DISTRO_FAMILY'."
+            log_error "No update implementation for distro family '$DISTRO_FAMILY'."
+            log_error "Please open an issue if you need support for this distribution."
             exit 1
             ;;
     esac
-
-    # ─── Installation Logic ─────────────────────────────────────────────────
-
-    log_step "Installing packages..."
-
-    pkg_install ${INSTALL_PACKAGES[@]+"${INSTALL_PACKAGES[@]}"}
-
-    if [[ "$DISTRO_FAMILY" == "arch" ]]; then
-        paru_install ${AUR_PACKAGES[@]+"${AUR_PACKAGES[@]}"}
-    fi
-
-    log_step "Installation complete."
 }
 
 # ─── Entrypoint ──────────────────────────────────────────────────────────────
