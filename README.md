@@ -2,7 +2,7 @@
 
 Opinionated post-install script for Linux. It installs all packages needed for a development workflow and removes unnecessary packages that ship with a fresh installation.
 
-Currently supports **Arch-based** distros, with a structure ready for Debian-based and Fedora-based support.
+Currently supports **Arch-based** distros (primary), with detection and stub support for NixOS, Debian, Fedora, Fedora Atomic, and VanillaOS.
 
 ## Goals
 
@@ -13,9 +13,14 @@ Currently supports **Arch-based** distros, with a structure ready for Debian-bas
 
 ## Supported Distro Families
 
-- **Arch** — `pacman` / `paru` (Arch, EndeavourOS, Manjaro, etc.)
-- **Debian** — placeholder, not yet implemented
-- **Fedora** — placeholder, not yet implemented
+| Family | Package Manager | Status | Examples |
+|--------|----------------|--------|----------|
+| **Arch** | `pacman` / `paru` | Supported | Arch, CachyOS, EndeavourOS, Manjaro |
+| **NixOS** | `nix` | Stub | NixOS |
+| **Debian** | `apt` | Stub | Debian, Ubuntu, Linux Mint, Pop!_OS |
+| **Fedora** | `dnf` | Stub | Fedora Workstation, RHEL |
+| **Fedora Atomic** | `rpm-ostree` | Stub | Silverblue, Kinoite, Sericea, Onyx |
+| **VanillaOS** | `apx` | Stub | VanillaOS 2.x (Orchid) |
 
 ## Usage
 
@@ -25,6 +30,7 @@ Currently supports **Arch-based** distros, with a structure ready for Debian-bas
 - `sudo` access — the script installs and removes system packages
 - `curl` — required only for remote execution (see below)
 - For Arch-based distros: `pacman` must be available (ships by default); `paru` is optional for AUR packages
+- For other distros: the corresponding package manager must be available (see table above)
 
 ### Quick Start
 
@@ -61,7 +67,7 @@ curl -fsSL https://example.com/setup.sh | sudo REPO_URL=https://example.com bash
 
 ### Remote Execution of Individual Scripts
 
-Each script can also be run standalone from the remote repository — it fetches only `lib/common.sh` (not the full suite):
+Each script can also be run standalone from the remote repository — it fetches `lib/common.sh` and `lib/packages.sh` (not the full suite):
 
 ```bash
 # Install packages only
@@ -115,20 +121,27 @@ All support the `--dry-run` flag:
 
 ### Customizing Package Lists
 
-Package lists are defined as arrays inside each script, organized by distro family. To add or remove packages, edit the relevant `case` block:
+All package lists are centralized in **`lib/packages.sh`**, organized by distro family. Each family has its own arrays:
 
-- **`install-tools.sh`** — `INSTALL_PACKAGES` and `AUR_PACKAGES` (Arch only)
-- **`cleanup-system.sh`** — `REMOVE_PACKAGES`
+| Array | Purpose |
+|-------|---------|
+| `INSTALL_PACKAGES_<FAMILY>` | Packages to install via the primary package manager |
+| `REMOVE_PACKAGES_<FAMILY>` | Packages to remove |
+| `AUR_PACKAGES_ARCH` | AUR packages (Arch only, installed via `paru`) |
 
-Each array uses one package per line for easy reading and diffing:
+`<FAMILY>` uses underscores for multi-word names (e.g., `FEDORA_ATOMIC`).
+
+To add a package, edit the appropriate array in `lib/packages.sh`. One package per line for easy diffing:
 
 ```bash
-INSTALL_PACKAGES=(
+INSTALL_PACKAGES_ARCH=(
     git
     neovim
     btop
 )
 ```
+
+Run `bash scripts/validate-packages.sh` to verify all required arrays are declared.
 
 > Review the package lists before executing. Always run with `--dry-run` first to preview what will happen.
 
@@ -150,12 +163,16 @@ sudo ./setup.sh 2>&1 | tee setup.log    # No colors (piped)
 .
 ├── setup.sh              # Entrypoint — orchestrates cleanup + install
 ├── lib/
-│   └── common.sh         # Shared: distro detection, privilege checks, dry-run, logging
-├── install-tools.sh      # Package installation (placeholder — packages added in follow-up)
+│   ├── common.sh         # Shared: distro detection, privilege checks, dry-run, logging
+│   └── packages.sh       # Centralized package lists for all distro families
+├── install-tools.sh      # Package installation
 ├── cleanup-system.sh     # Package removal (unwanted distro packages)
 ├── update-tools.sh       # Package updates (pacman -Syu + paru -Sua on Arch)
+├── scripts/
+│   └── validate-packages.sh  # CI check: verifies all package arrays exist
 ├── SHA256SUMS            # Checksums for downloaded scripts — verified during remote execution
 └── .github/
     └── workflows/
-        └── checksums.yml # Auto-regenerates SHA256SUMS on push to main
+        ├── checksums.yml          # Auto-regenerates SHA256SUMS on push to main
+        └── validate-packages.yml  # Validates package array completeness on PRs
 ```

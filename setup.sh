@@ -108,6 +108,8 @@ run_remote() {
 
     curl -fsSL "$REPO_URL/lib/common.sh" -o "$tmp_dir/lib/common.sh" &
     dl_pids+=($!) dl_names+=("lib/common.sh")
+    curl -fsSL "$REPO_URL/lib/packages.sh" -o "$tmp_dir/lib/packages.sh" &
+    dl_pids+=($!) dl_names+=("lib/packages.sh")
     curl -fsSL "$REPO_URL/install-tools.sh" -o "$tmp_dir/install-tools.sh" &
     dl_pids+=($!) dl_names+=("install-tools.sh")
     curl -fsSL "$REPO_URL/cleanup-system.sh" -o "$tmp_dir/cleanup-system.sh" &
@@ -145,6 +147,7 @@ run_remote() {
 
     # Validate fetched scripts are non-empty and start with #!/bin/bash
     validate_fetched_script "$tmp_dir/lib/common.sh"      "lib/common.sh"      || exit 1
+    validate_fetched_script "$tmp_dir/lib/packages.sh"    "lib/packages.sh"    || exit 1
     validate_fetched_script "$tmp_dir/install-tools.sh"   "install-tools.sh"   || exit 1
     validate_fetched_script "$tmp_dir/cleanup-system.sh"  "cleanup-system.sh"  || exit 1
     validate_fetched_script "$tmp_dir/update-tools.sh"    "update-tools.sh"    || exit 1
@@ -224,7 +227,7 @@ if [[ -p /dev/stdin ]]; then
     run_remote
 else
     SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" 2>/dev/null && pwd)"
-    if [[ -f "$SCRIPT_DIR/lib/common.sh" ]]; then
+    if [[ -f "$SCRIPT_DIR/lib/common.sh" ]] && [[ -f "$SCRIPT_DIR/lib/packages.sh" ]]; then
         run_local "$SCRIPT_DIR"
     else
         run_remote

@@ -4,12 +4,12 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-Opinionated post-install script for Linux. Installs required development packages and removes unnecessary default packages so a fresh system is ready for work. Currently supports Arch-based distros, extensible to Debian-based and Fedora-based.
+Opinionated post-install script for Linux. Installs required development packages and removes unnecessary default packages so a fresh system is ready for work. Supports 6 distro families: Arch (primary), NixOS, Debian, Fedora, Fedora Atomic, and VanillaOS.
 
 ## Target System
 
-- **Distro families:** Arch-based (currently supported), Debian-based and Fedora-based (placeholder)
-- **Package managers:** `pacman` / `paru` for Arch; `apt` for Debian; `dnf` for Fedora
+- **Distro families:** Arch (primary), NixOS, Debian, Fedora, Fedora Atomic, VanillaOS (stubs for non-Arch)
+- **Package managers:** `pacman` / `paru` for Arch; `nix` for NixOS; `apt` for Debian; `dnf` for Fedora; `rpm-ostree` for Fedora Atomic; `apx` for VanillaOS
 - **Shell:** Bash scripts (`#!/bin/bash`)
 
 ## Running
@@ -44,5 +44,8 @@ The script requires elevated privileges for package operations.
 - **Associative array for package lookups:** in `pacman_remove()`, parse `pacman -Q` output into a `local -A` associative array for O(1) installed-package checks instead of per-package subshell grep
 - **Inline log stubs:** all scripts with remote execution support (`setup.sh`, `install-tools.sh`, `cleanup-system.sh`, `update-tools.sh`) define lightweight `log_info`/`log_warn`/`log_error`/`log_step` functions before `common.sh` is sourced so remote-fetch output uses consistent `[INFO]`/`[WARN]`/`[ERROR]`/`[STEP]` prefixes; overridden when `common.sh` loads
 - **Idempotent init guards:** sub-scripts use `[[ -n "${VAR:-}" ]] || init_func` guards so detection runs once when orchestrated by `setup.sh` but still works standalone
-- **Self-contained remote execution:** each individual script (`install-tools.sh`, `cleanup-system.sh`, `update-tools.sh`) duplicates the remote-execution boilerplate (log stubs, `REPO_URL`, `validate_fetched_script`, `run_remote`, `run_local`, entrypoint) so it can be piped from `curl` independently; each fetches only `lib/common.sh` (not the full suite) and uses `sha256sum --check --strict --ignore-missing` for partial SHA256SUMS verification
+- **Self-contained remote execution:** each individual script (`install-tools.sh`, `cleanup-system.sh`, `update-tools.sh`) duplicates the remote-execution boilerplate (log stubs, `REPO_URL`, `validate_fetched_script`, `run_remote`, `run_local`, entrypoint) so it can be piped from `curl` independently; each fetches `lib/common.sh` and `lib/packages.sh` and uses `sha256sum --check --strict --ignore-missing` for partial SHA256SUMS verification
 - **`paru -Sua` for AUR updates:** `paru_update()` uses `-Sua` (not `-Syu`) because official repos are already synced by the preceding `pacman_update()` call
+- **Centralized package lists:** all package arrays live in `lib/packages.sh` with naming convention `<OPERATION>_PACKAGES_<FAMILY>` (e.g., `INSTALL_PACKAGES_ARCH`, `REMOVE_PACKAGES_FEDORA_ATOMIC`); Arch has an extra `AUR_PACKAGES_ARCH` for AUR-only packages; `FAMILY` uses underscores for multi-word names
+- **Distro detection order:** `detect_distro()` checks specific/immutable distros before their parent families to prevent misclassification (nixos → vanilla → fedora-atomic → arch → debian → fedora → unknown); Fedora Atomic is identified by `VARIANT_ID` matching `silverblue|kinoite|sericea|onyx`
+- **CI validation:** `scripts/validate-packages.sh` verifies all required package arrays are declared in `lib/packages.sh` for every supported family; run by `.github/workflows/validate-packages.yml` on PRs and pushes

@@ -93,6 +93,8 @@ run_remote() {
     # Download only the files this script needs
     curl -fsSL "$REPO_URL/lib/common.sh" -o "$tmp_dir/lib/common.sh" &
     dl_pids+=($!) dl_names+=("lib/common.sh")
+    curl -fsSL "$REPO_URL/lib/packages.sh" -o "$tmp_dir/lib/packages.sh" &
+    dl_pids+=($!) dl_names+=("lib/packages.sh")
 
     # Also attempt to fetch SHA256SUMS (optional — graceful degradation)
     curl -fsSL "$REPO_URL/SHA256SUMS" -o "$tmp_dir/SHA256SUMS" &
@@ -120,7 +122,8 @@ run_remote() {
         exit 1
     fi
 
-    validate_fetched_script "$tmp_dir/lib/common.sh" "lib/common.sh" || exit 1
+    validate_fetched_script "$tmp_dir/lib/common.sh"   "lib/common.sh"   || exit 1
+    validate_fetched_script "$tmp_dir/lib/packages.sh" "lib/packages.sh" || exit 1
 
     # Verify integrity via SHA256SUMS if available (--ignore-missing: only check files
     # present in the tmpdir — individual scripts don't download the full suite).
@@ -163,6 +166,8 @@ run_local() {
 
     # shellcheck source=lib/common.sh
     source "$base_dir/lib/common.sh"
+    # shellcheck source=lib/packages.sh
+    source "$base_dir/lib/packages.sh"
 
     parse_args ${FORWARD_ARGS[@]+"${FORWARD_ARGS[@]}"}
 
@@ -176,30 +181,35 @@ run_local() {
     [[ -n "${_AUR_HELPER_CHECKED:-}" ]] || check_aur_helper
 
     # ─── Package Lists ───────────────────────────────────────────────────────
+    # Loaded from lib/packages.sh — dispatch to the correct distro family arrays.
 
     INSTALL_PACKAGES=()
     AUR_PACKAGES=()
 
     case "$DISTRO_FAMILY" in
         arch)
-            INSTALL_PACKAGES=(
-                # Packages will be added in a follow-up task
-            )
-            AUR_PACKAGES=(
-                # AUR packages will be added in a follow-up task
-            )
+            INSTALL_PACKAGES=("${INSTALL_PACKAGES_ARCH[@]+"${INSTALL_PACKAGES_ARCH[@]}"}")
+            AUR_PACKAGES=("${AUR_PACKAGES_ARCH[@]+"${AUR_PACKAGES_ARCH[@]}"}")
             ;;
         debian)
-            log_warn "Debian package list is not yet implemented. No packages will be installed."
-            INSTALL_PACKAGES=(
-                # Packages will be added in a follow-up task
-            )
+            INSTALL_PACKAGES=("${INSTALL_PACKAGES_DEBIAN[@]+"${INSTALL_PACKAGES_DEBIAN[@]}"}")
+            [[ ${#INSTALL_PACKAGES[@]} -gt 0 ]] || log_warn "Debian package list is not yet populated. No packages will be installed."
             ;;
         fedora)
-            log_warn "Fedora package list is not yet implemented. No packages will be installed."
-            INSTALL_PACKAGES=(
-                # Packages will be added in a follow-up task
-            )
+            INSTALL_PACKAGES=("${INSTALL_PACKAGES_FEDORA[@]+"${INSTALL_PACKAGES_FEDORA[@]}"}")
+            [[ ${#INSTALL_PACKAGES[@]} -gt 0 ]] || log_warn "Fedora package list is not yet populated. No packages will be installed."
+            ;;
+        nixos)
+            INSTALL_PACKAGES=("${INSTALL_PACKAGES_NIXOS[@]+"${INSTALL_PACKAGES_NIXOS[@]}"}")
+            [[ ${#INSTALL_PACKAGES[@]} -gt 0 ]] || log_warn "NixOS package list is not yet populated. No packages will be installed."
+            ;;
+        fedora-atomic)
+            INSTALL_PACKAGES=("${INSTALL_PACKAGES_FEDORA_ATOMIC[@]+"${INSTALL_PACKAGES_FEDORA_ATOMIC[@]}"}")
+            [[ ${#INSTALL_PACKAGES[@]} -gt 0 ]] || log_warn "Fedora Atomic package list is not yet populated. No packages will be installed."
+            ;;
+        vanilla)
+            INSTALL_PACKAGES=("${INSTALL_PACKAGES_VANILLA[@]+"${INSTALL_PACKAGES_VANILLA[@]}"}")
+            [[ ${#INSTALL_PACKAGES[@]} -gt 0 ]] || log_warn "VanillaOS package list is not yet populated. No packages will be installed."
             ;;
         *)
             log_error "No package list defined for distro family '$DISTRO_FAMILY'."
@@ -230,7 +240,7 @@ if [[ -p /dev/stdin ]]; then
     run_remote
 else
     SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" 2>/dev/null && pwd)"
-    if [[ -f "$SCRIPT_DIR/lib/common.sh" ]]; then
+    if [[ -f "$SCRIPT_DIR/lib/common.sh" ]] && [[ -f "$SCRIPT_DIR/lib/packages.sh" ]]; then
         run_local "$SCRIPT_DIR"
     else
         run_remote
